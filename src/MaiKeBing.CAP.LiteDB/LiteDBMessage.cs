@@ -25,7 +25,7 @@ namespace MaiKeBing.CAP.LiteDB
             _message.Origin = null;
         }
         
-        public string Id
+        public string DbId
         {
             get { return _message.DbId; }
             set { _message.DbId = value; }
@@ -57,7 +57,12 @@ namespace MaiKeBing.CAP.LiteDB
             set { _message.ExpiresAt = value; }
         }
         public string Group { get; set; }
-
+      
+        public Message Origin
+        {
+            get { return _message.Origin; }
+            set { _message.Origin = value; }
+        }
         public static explicit operator MediumMessage(CAP.LiteDB.LiteDBMessage v)
         {
             return v._message;

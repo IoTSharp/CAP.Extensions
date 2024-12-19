@@ -22,16 +22,20 @@ namespace MaiKeBing.CAP.LiteDB
     {
         private readonly IOptions<CapOptions> _capOptions;
         private readonly  LiteDBOptions  _ldboption;
+        private readonly ISnowflakeId _snowflakeId;
+        private readonly ISerializer _serializer;
         LiteDatabase _lite;
-        public LiteDBStorage(IOptions<CapOptions> capOptions, IOptions<LiteDBOptions> ldboption)
+        public LiteDBStorage(IOptions<CapOptions> capOptions, IOptions<LiteDBOptions> ldboption,ISerializer serializer, ISnowflakeId snowflakeId)
         {
             _capOptions = capOptions;
             _ldboption = ldboption.Value;
+            _snowflakeId = snowflakeId;
+            _serializer = serializer;
             _lite = new LiteDatabase(_ldboption.ConnectionString);
             PublishedMessages = _lite.GetCollection<LiteDBMessage>(nameof(PublishedMessages));
-            PublishedMessages.EnsureIndex( l => l.Id,true);
+            PublishedMessages.EnsureIndex( l => l.DbId,true);
             ReceivedMessages = _lite.GetCollection<LiteDBMessage>(nameof(ReceivedMessages));
-            ReceivedMessages.EnsureIndex(l => l.Id, true);
+            ReceivedMessages.EnsureIndex(l => l.DbId, true);
         }
 
         public static ILiteCollection< LiteDBMessage> PublishedMessages { get; private set; } 
@@ -40,7 +44,7 @@ namespace MaiKeBing.CAP.LiteDB
 
         public Task ChangePublishStateAsync(MediumMessage message, StatusName state)
         {
-            var msg = PublishedMessages.FindOne(l => l.Id == message.DbId);
+            var msg = PublishedMessages.FindOne(l => l.DbId == message.DbId);
             msg.StatusName = state;
             msg.ExpiresAt = message.ExpiresAt;
             PublishedMessages.Update(msg);
@@ -49,7 +53,7 @@ namespace MaiKeBing.CAP.LiteDB
 
         public Task ChangeReceiveStateAsync(MediumMessage message, StatusName state)
         {
-            var msg = ReceivedMessages.FindOne(l => l.Id == message.DbId);
+            var msg = ReceivedMessages.FindOne(l => l.DbId == message.DbId);
             msg.StatusName = state;
             msg.ExpiresAt = message.ExpiresAt;
             ReceivedMessages.Update(msg);
@@ -70,7 +74,7 @@ namespace MaiKeBing.CAP.LiteDB
 
             PublishedMessages.Insert(new LiteDBMessage()
             {
-                Id = message.DbId,
+                DbId = message.DbId,
                 Name = name,
                 Content = message.Content,
                 Retries = message.Retries,
@@ -83,11 +87,11 @@ namespace MaiKeBing.CAP.LiteDB
 
         public void StoreReceivedExceptionMessage(string name, string group, string content)
         {
-            var id = SnowflakeId Default().NextId().ToString();
+            var id =    _snowflakeId.NextId().ToString();
 
             ReceivedMessages.Insert( new LiteDBMessage
             {
-                 Id = id,
+                 DbId = id,
                 Group = group,
                 Name = name,
                 Content = content,
@@ -102,7 +106,7 @@ namespace MaiKeBing.CAP.LiteDB
         {
             var mdMessage = new MediumMessage
             {
-                DbId = SnowflakeId.Default().NextId().ToString(),
+                DbId = _snowflakeId.NextId().ToString(),
                 Origin = message,
                 Added = DateTime.Now,
                 ExpiresAt = null,
@@ -111,10 +115,10 @@ namespace MaiKeBing.CAP.LiteDB
 
             ReceivedMessages.Insert ( new LiteDBMessage(mdMessage.Origin)
             {
-                 Id = mdMessage.DbId,
+                 DbId = mdMessage.DbId,
                 Group = group,
                 Name = name,
-                Content = System.Text.Json.JsonSerializer.Serialize(mdMessage.Origin),
+                Content =_serializer.Serialize(mdMessage.Origin),
                 Retries = mdMessage.Retries,
                 Added = mdMessage.Added,
                 ExpiresAt = mdMessage.ExpiresAt,
@@ -180,57 +184,144 @@ namespace MaiKeBing.CAP.LiteDB
 
         public Task<bool> AcquireLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
         {
-             
+            return Task.FromResult(true);
         }
 
         public Task ReleaseLockAsync(string key, string instance, CancellationToken token = default)
         {
-           
+            return Task.FromResult(true);
         }
 
         public Task RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
         {
-            throw new NotImplementedException();
+           return Task.CompletedTask;
         }
 
         public Task ChangePublishStateToDelayedAsync(string[] ids)
         {
-         
+            foreach (var id in ids)
+            {
+                var msg = PublishedMessages.FindById(id);
+                msg.StatusName = StatusName.Delayed;
+                PublishedMessages.Update(msg);
+            }
+
+            return Task.CompletedTask;
         }
 
         public Task ChangePublishStateAsync(MediumMessage message, StatusName state, object transaction = null)
         {
-            throw new NotImplementedException();
+            var msg = PublishedMessages.FindById(message.DbId);
+                msg.StatusName = state;
+            msg.ExpiresAt = message.ExpiresAt;
+            msg.Content = _serializer.Serialize(message.Origin);
+            PublishedMessages.Update(msg);  
+            return Task.CompletedTask;
         }
 
         public Task<MediumMessage> StoreMessageAsync(string name, Message content, object transaction = null)
         {
-            throw new NotImplementedException();
+            var message = new MediumMessage
+            {
+                DbId = content.GetId(),
+                Origin = content,
+                Content = _serializer.Serialize(content),
+                Added = DateTime.Now,
+                ExpiresAt = null,
+                Retries = 0
+            };
+
+           var msg= new LiteDBMessage
+            {
+                DbId = message.DbId,
+                Name = name,
+                Origin = message.Origin,
+                Content = message.Content,
+                Retries = message.Retries,
+                Added = message.Added,
+                ExpiresAt = message.ExpiresAt,
+                StatusName = StatusName.Scheduled
+            };
+            PublishedMessages.Upsert(msg);
+            return Task.FromResult(message);
         }
 
         public Task StoreReceivedExceptionMessageAsync(string name, string group, string content)
         {
-            throw new NotImplementedException();
+            var id = _snowflakeId.NextId().ToString();
+
+          var msg= new LiteDBMessage()
+          {
+                DbId = id,
+                Group = group,
+                Origin = null!,
+                Name = name,
+                Content = content,
+                Retries = _capOptions.Value.FailedRetryCount,
+                Added = DateTime.Now,
+                ExpiresAt = DateTime.Now.AddSeconds(_capOptions.Value.FailedMessageExpiredAfter),
+                StatusName = StatusName.Failed
+            };
+            PublishedMessages.Upsert(msg);
+            return Task.CompletedTask;
         }
 
         public Task<MediumMessage> StoreReceivedMessageAsync(string name, string group, Message content)
         {
-            throw new NotImplementedException();
+            var mdMessage = new MediumMessage
+            {
+                DbId = _snowflakeId.NextId().ToString(),
+                Origin =   content,
+                Added = DateTime.Now,
+                ExpiresAt = null,
+                Retries = 0
+            };
+
+           var msg= new LiteDBMessage()
+           {
+                DbId = mdMessage.DbId,
+                Origin = mdMessage.Origin,
+                Group = group,
+                Name = name,
+                Content = _serializer.Serialize(mdMessage.Origin),
+                Retries = mdMessage.Retries,
+                Added = mdMessage.Added,
+                ExpiresAt = mdMessage.ExpiresAt,
+                StatusName = StatusName.Scheduled
+            };
+            PublishedMessages.Upsert(msg);
+            return Task.FromResult(mdMessage);
         }
 
         public Task<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
         {
-            throw new NotImplementedException();
+            IEnumerable<MediumMessage> result = PublishedMessages.Find(x => x.Retries < _capOptions.Value.FailedRetryCount
+            && x.Added < DateTime.Now.Subtract(lookbackSeconds)
+                          && (x.StatusName == StatusName.Scheduled || x.StatusName == StatusName.Failed))
+              .Take(200)
+              .Select(x => (MediumMessage)x).ToList();
+            return Task.FromResult(result);
         }
 
         public Task ScheduleMessagesOfDelayedAsync(Func<object, IEnumerable<MediumMessage>, Task> scheduleTask, CancellationToken token = default)
         {
-            throw new NotImplementedException();
+            var result = PublishedMessages.Find(x =>
+              (x.StatusName == StatusName.Delayed && x.ExpiresAt < DateTime.Now.AddMinutes(2))
+              || (x.StatusName == StatusName.Queued && x.ExpiresAt < DateTime.Now.AddMinutes(-1)))
+          .Select(x => (MediumMessage)x);
+
+            return scheduleTask(null!, result);
         }
 
         public Task<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
         {
-            throw new NotImplementedException();
+            IEnumerable<MediumMessage> result = PublishedMessages.Find(x => x.Retries < _capOptions.Value.FailedRetryCount
+                             && x.Added < DateTime.Now.Subtract(lookbackSeconds)
+                             && (x.StatusName == StatusName.Scheduled || x.StatusName == StatusName.Failed))
+                 .Take(200)
+                 .Select(x => (MediumMessage)x).ToList();
+
+            return Task.FromResult(result);
         }
     }
 }

@@ -9,6 +9,11 @@ namespace MaiKeBing.CAP.LiteDB
 {
     internal class LiteDBStorageInitializer : IStorageInitializer
     {
+        public string GetLockTableName()
+        {
+            return nameof(LiteDBStorage.PublishedMessages);
+        }
+
         public string GetPublishedTableName()
         {
             return nameof(LiteDBStorage.PublishedMessages);

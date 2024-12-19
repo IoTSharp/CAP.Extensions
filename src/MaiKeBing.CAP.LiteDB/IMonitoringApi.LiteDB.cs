@@ -16,14 +16,19 @@ namespace MaiKeBing.CAP.LiteDB
 {
     internal class LiteDBMonitoringApi : IMonitoringApi
     {
+        public Task<PagedQueryResult<MessageDto>> GetMessagesAsync(MessageQueryDto queryDto)
+        {
+            throw new NotImplementedException();
+        }
+
         public Task<MediumMessage> GetPublishedMessageAsync(long id)
         {
-            return Task.FromResult((MediumMessage)LiteDBStorage.PublishedMessages.FindOne(x => x.Id == id.ToString(CultureInfo.InvariantCulture)));
+            return Task.FromResult((MediumMessage)LiteDBStorage.PublishedMessages.FindOne(x => x.DbId == id.ToString(CultureInfo.InvariantCulture)));
         }
 
         public Task<MediumMessage> GetReceivedMessageAsync(long id)
         {
-            return Task.FromResult((MediumMessage)LiteDBStorage.ReceivedMessages.FindOne(x => x.Id == id.ToString(CultureInfo.InvariantCulture)));
+            return Task.FromResult((MediumMessage)LiteDBStorage.ReceivedMessages.FindOne(x => x.DbId == id.ToString(CultureInfo.InvariantCulture)));
         }
 
         public StatisticsDto GetStatistics()
@@ -36,6 +41,11 @@ namespace MaiKeBing.CAP.LiteDB
                 ReceivedFailed = LiteDBStorage.ReceivedMessages.Count(x => x.StatusName == StatusName.Failed)
             };
             return stats;
+        }
+
+        public Task<StatisticsDto> GetStatisticsAsync()
+        {
+            throw new NotImplementedException();
         }
 
         public IDictionary<DateTime, int> HourlyFailedJobs(MessageType type)
@@ -77,7 +87,7 @@ namespace MaiKeBing.CAP.LiteDB
                     Version = "N/A",
                     Content = x.Content,
                     ExpiresAt = x.ExpiresAt,
-                    Id = x.Id,
+                    Id = x.DbId,
                     Name = x.Name,
                     Retries = x.Retries,
                     StatusName = x.StatusName.ToString()
@@ -117,7 +127,7 @@ namespace MaiKeBing.CAP.LiteDB
                     Version = "N/A",
                     Content = x.Content,
                     ExpiresAt = x.ExpiresAt,
-                    Id = x.Id,
+                    Id = x.DbId,
                     Name = x.Name,
                     Retries = x.Retries,
                     StatusName = x.StatusName.ToString()
@@ -145,7 +155,7 @@ namespace MaiKeBing.CAP.LiteDB
             return LiteDBStorage.ReceivedMessages.Count(x => x.StatusName == StatusName.Succeeded);
         }
 
-        private Dictionary<DateTime, int> GetHourlyTimelineStats(MessageType type, string statusName)
+        private IDictionary<DateTime, int> GetHourlyTimelineStats(MessageType type, string statusName)
         {
             var endDate = DateTime.Now;
             var dates = new List<DateTime>();
@@ -191,9 +201,35 @@ namespace MaiKeBing.CAP.LiteDB
             return result;
         }
 
-        PagedQueryResult<MessageDto> IMonitoringApi.Messages(MessageQueryDto queryDto)
+        Task<IDictionary<DateTime, int>> IMonitoringApi.HourlyFailedJobs(MessageType type)
         {
-            throw new NotImplementedException();
+            return Task.FromResult(GetHourlyTimelineStats(type, nameof(StatusName.Failed)));
+        }
+
+        Task<IDictionary<DateTime, int>> IMonitoringApi.HourlySucceededJobs(MessageType type)
+        {
+            return  Task.FromResult( GetHourlyTimelineStats(type, nameof(StatusName.Succeeded)));
+        }
+ 
+
+        ValueTask<int> IMonitoringApi.PublishedFailedCount()
+        {
+            return new ValueTask<int>(LiteDBStorage.PublishedMessages.Count(x => x.StatusName == StatusName.Failed));
+        }
+
+        ValueTask<int> IMonitoringApi.PublishedSucceededCount()
+        {
+            return new ValueTask<int>(           LiteDBStorage.PublishedMessages.Count(x => x.StatusName == StatusName.Succeeded));
+        }
+
+        ValueTask<int> IMonitoringApi.ReceivedFailedCount()
+        {
+            return new ValueTask<int>( LiteDBStorage.PublishedMessages.Count(x => x.StatusName == StatusName.Failed));
+        }
+
+        ValueTask<int> IMonitoringApi.ReceivedSucceededCount()
+        {
+            return new ValueTask<int>(LiteDBStorage.PublishedMessages.Count(x => x.StatusName == StatusName.Succeeded));
         }
     }
 }
