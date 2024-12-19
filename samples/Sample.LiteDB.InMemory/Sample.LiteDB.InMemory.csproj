@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -10,10 +10,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="DotNetCore.CAP" Version="7.0.0" />
-    <PackageReference Include="DotNetCore.CAP.Dashboard" Version="7.0.0" />
-    <PackageReference Include="LiteDB" Version="5.0.12" />
-    <PackageReference Include="Savorboard.CAP.InMemoryMessageQueue" Version="7.0.0" />
+    <PackageReference Include="DotNetCore.CAP" Version="8.3.2" />
+    <PackageReference Include="DotNetCore.CAP.Dashboard" Version="8.3.2" />
+    <PackageReference Include="LiteDB" Version="5.0.21" />
+    <PackageReference Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
   </ItemGroup>
 
   <ItemGroup>

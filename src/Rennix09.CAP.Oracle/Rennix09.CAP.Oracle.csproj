@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net7.0</TargetFrameworks>
+		<TargetFrameworks>net9.0</TargetFrameworks>
 		<AssemblyName>Rennix09.CAP.Oracle</AssemblyName>
 		<PackageTags>CAP;Oracle</PackageTags>
 		<LangVersion>8.0</LangVersion>
@@ -21,19 +21,19 @@
 		<PackageReleaseNotes>https://github.com/maikebing/CAP.Extensions/tree/master/src/Rennix09.CAP.Oracle</PackageReleaseNotes>
 	</PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net7.0|AnyCPU'">
+	<PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net9.0|AnyCPU'">
 	  <LangVersion>9.0</LangVersion>
 	</PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net7.0|AnyCPU'">
+	<PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net9.0|AnyCPU'">
 	  <LangVersion>9.0</LangVersion>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="DotNetCore.CAP" Version="7.0.0" />
-		<PackageReference Include="Oracle.ManagedDataAccess.Core" Version="3.21.80" />
+		<PackageReference Include="DotNetCore.CAP" Version="8.3.2" />
+		<PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.6.1" />
 	</ItemGroup>
-	<ItemGroup Condition="'$(TargetFramework)'=='net7.0'">
-		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="7.*" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="7.*" />
+	<ItemGroup Condition="'$(TargetFramework)'=='net9.0'">
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.0" />
 	</ItemGroup>
 </Project>

@@ -83,7 +83,7 @@ namespace MaiKeBing.CAP.LiteDB
 
         public void StoreReceivedExceptionMessage(string name, string group, string content)
         {
-            var id = SnowflakeId.Default().NextId().ToString();
+            var id = SnowflakeId Default().NextId().ToString();
 
             ReceivedMessages.Insert( new LiteDBMessage
             {
@@ -176,6 +176,61 @@ namespace MaiKeBing.CAP.LiteDB
         public IMonitoringApi GetMonitoringApi()
         {
             return new LiteDBMonitoringApi();
+        }
+
+        public Task<bool> AcquireLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
+        {
+             
+        }
+
+        public Task ReleaseLockAsync(string key, string instance, CancellationToken token = default)
+        {
+           
+        }
+
+        public Task RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task ChangePublishStateToDelayedAsync(string[] ids)
+        {
+         
+        }
+
+        public Task ChangePublishStateAsync(MediumMessage message, StatusName state, object transaction = null)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<MediumMessage> StoreMessageAsync(string name, Message content, object transaction = null)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task StoreReceivedExceptionMessageAsync(string name, string group, string content)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<MediumMessage> StoreReceivedMessageAsync(string name, string group, Message content)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task ScheduleMessagesOfDelayedAsync(Func<object, IEnumerable<MediumMessage>, Task> scheduleTask, CancellationToken token = default)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+        {
+            throw new NotImplementedException();
         }
     }
 }

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net7.0</TargetFramework>
+		<TargetFramework>net9.0</TargetFramework>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageProjectUrl>https://github.com/maikebing/CAP.Extensions</PackageProjectUrl>
@@ -17,8 +17,8 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="DotNetCore.CAP" Version="7.0.0" />
-		<PackageReference Include="DotNetCore.CAP.RabbitMQ" Version="7.0.0" />
+		<PackageReference Include="DotNetCore.CAP" Version="8.3.2" />
+		<PackageReference Include="DotNetCore.CAP.RabbitMQ" Version="8.3.2" />
 	</ItemGroup>
 	<ItemGroup>
 		<None Include="..\..\docs\cap.png">
