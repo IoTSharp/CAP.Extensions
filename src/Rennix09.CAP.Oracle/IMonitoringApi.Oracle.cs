@@ -29,7 +29,7 @@ namespace Rennix09.CAP.Oracle
             _recName = initializer.GetReceivedTableName();
         }
 
-        public Task< StatisticsDto> GetStatisticsAsync()
+        public async Task< StatisticsDto> GetStatisticsAsync()
         {
             var sql = $@"
                 SELECT
@@ -48,7 +48,7 @@ namespace Rennix09.CAP.Oracle
                 FROM dual";
 
             using var connection = new OracleConnection(_options.ConnectionString);
-            var statistics = connection.ExecuteReader(sql, reader =>
+            var statistics = await connection.ExecuteReaderAsync(sql,   reader => 
             {
                 var statisticsDto = new StatisticsDto();
 
@@ -60,25 +60,24 @@ namespace Rennix09.CAP.Oracle
                     statisticsDto.ReceivedFailed = reader.GetInt32(3);
                 }
 
-                return statisticsDto;
+                return Task.FromResult( statisticsDto);
             });
-
-            return Task.FromResult( statistics);
+            return statistics;
         }
 
         public Task<IDictionary<DateTime, int>> HourlyFailedJobs(MessageType type)
         {
             var tableName = type == MessageType.Publish ? _pubName : _recName;
-            return  Task.FromResult( GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)));
+            return  GetHourlyTimelineStats(tableName, nameof(StatusName.Failed));
         }
 
         public Task<IDictionary<DateTime, int>> HourlySucceededJobs(MessageType type)
         {
             var tableName = type == MessageType.Publish ? _pubName : _recName;
-            return Task.FromResult(GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)));
+            return GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded));
         }
 
-        public Task<PagedQueryResult<MessageDto>> Messages(MessageQueryDto queryDto)
+        public async Task<PagedQueryResult<MessageDto>> Messages(MessageQueryDto queryDto)
         {
             var tableName = queryDto.MessageType == MessageType.Publish ? _pubName : _recName;
 
@@ -128,7 +127,7 @@ namespace Rennix09.CAP.Oracle
             });
 
             using var connection = new OracleConnection(_options.ConnectionString);
-            var result= connection.ExecuteReader(sqlQuery, reader =>
+            var result= await connection.ExecuteReaderAsync(sqlQuery, reader =>
             {
                 var messages = new List<MessageDto>();
 
@@ -149,14 +148,14 @@ namespace Rennix09.CAP.Oracle
                     });
                 }
 
-                return messages;
-            }, sqlParams.ToArray());
+                return Task.FromResult( messages);
+            },null, sqlParams.ToArray());
             var pqr = new PagedQueryResult<MessageDto>();
             pqr.Totals = result.Count;
             pqr.Items = result;
             pqr.PageSize = queryDto.PageSize;
             pqr.PageIndex = queryDto.CurrentPage;
-            return Task.FromResult(pqr);
+            return pqr;
         }
 
         /// <summary>
@@ -174,32 +173,32 @@ namespace Rennix09.CAP.Oracle
 
         public ValueTask<int> PublishedFailedCount()
         {
-            return ValueTask.FromResult(GetNumberOfMessage(_pubName, nameof(StatusName.Failed)));
+            return GetNumberOfMessage(_pubName, nameof(StatusName.Failed));
         }
 
         public ValueTask<int> PublishedSucceededCount()
         {
-            return ValueTask.FromResult(GetNumberOfMessage(_pubName, nameof(StatusName.Succeeded)));
+            return GetNumberOfMessage(_pubName, nameof(StatusName.Succeeded));
         }
 
         public ValueTask<int> ReceivedFailedCount()
         {
-            return ValueTask.FromResult(GetNumberOfMessage(_recName, nameof(StatusName.Failed)));
+            return  GetNumberOfMessage(_recName, nameof(StatusName.Failed));
         }
 
         public ValueTask< int> ReceivedSucceededCount()
         {
-            return ValueTask.FromResult( GetNumberOfMessage(_recName, nameof(StatusName.Succeeded)));
+            return  GetNumberOfMessage(_recName, nameof(StatusName.Succeeded));
         }
 
-        private int GetNumberOfMessage(string tableName, string statusName)
+        private async ValueTask<int> GetNumberOfMessage(string tableName, string statusName)
         {
             var sqlQuery = $@"select count(""Id"") from ""{tableName}"" where ""StatusName"" = :P_StatusName";
             using var connection = new OracleConnection(_options.ConnectionString);
-            return connection.ExecuteScalar<int>(sqlQuery, new OracleParameter(":P_StatusName", statusName));
+            return await connection.ExecuteScalarAsync<int>(sqlQuery, new OracleParameter(":P_StatusName", statusName));
         }
 
-        private IDictionary<DateTime, int> GetHourlyTimelineStats(string tableName, string statusName)
+        private async  Task<IDictionary<DateTime, int>> GetHourlyTimelineStats(string tableName, string statusName)
         {
             var endDate = DateTime.Now;
             var dates = new List<DateTime>();
@@ -211,10 +210,10 @@ namespace Rennix09.CAP.Oracle
 
             var keyMaps = dates.ToDictionary(x => x.ToString("yyyy-MM-dd-HH"), x => x);
 
-            return GetTimelineStats(tableName, statusName, keyMaps);
+            return  await GetTimelineStats(tableName, statusName, keyMaps);
         }
 
-        private IDictionary<DateTime, int> GetTimelineStats(
+        private async Task< IDictionary<DateTime, int>> GetTimelineStats(
             string tableName,
             string statusName,
             IDictionary<string, DateTime> keyMaps)
@@ -239,7 +238,7 @@ namespace Rennix09.CAP.Oracle
             Dictionary<string, int> valuesMap;
             using (var connection = new OracleConnection(_options.ConnectionString))
             {
-                valuesMap = connection.ExecuteReader(sqlQuery, reader =>
+                valuesMap = await connection.ExecuteReaderAsync(sqlQuery, reader =>
                 {
                     var dictionary = new Dictionary<string, int>();
 
@@ -248,8 +247,8 @@ namespace Rennix09.CAP.Oracle
                         dictionary.Add(reader.GetString(0), reader.GetInt32(1));
                     }
 
-                    return dictionary;
-                }, sqlParams);
+                    return Task.FromResult( dictionary);
+                },null, sqlParams);
             }
 
             foreach (var key in keyMaps.Keys)
@@ -282,7 +281,7 @@ namespace Rennix09.CAP.Oracle
 
 
             using var connection = new OracleConnection(_options.ConnectionString);
-            var mediumMessage = connection.ExecuteReader(sql, reader =>
+            var mediumMessage =await connection.ExecuteReaderAsync(sql,  reader =>
             {
                 MediumMessage message = null;
 
@@ -298,13 +297,13 @@ namespace Rennix09.CAP.Oracle
                     };
                 }
 
-                return message;
+                return Task.FromResult( message);
             });
 
-            return await Task.FromResult(mediumMessage);
+            return    mediumMessage;
         }
 
-      public  Task<PagedQueryResult<MessageDto>>  GetMessagesAsync(MessageQueryDto queryDto)
+      public  async Task<PagedQueryResult<MessageDto>>  GetMessagesAsync(MessageQueryDto queryDto)
         {
 
             var tableName = queryDto.MessageType == MessageType.Publish ? _pubName : _recName;
@@ -333,13 +332,13 @@ namespace Rennix09.CAP.Oracle
             var connection = new OracleConnection(_options.ConnectionString);
             using var _ = connection;
 
-            var count =  connection.ExecuteScalar<int>($"select count(1) from `{tableName}` where 1=1 {where}",
+            var count = await connection.ExecuteScalarAsync<int>($"select count(1) from `{tableName}` where 1=1 {where}",
                 new OracleParameter(":P_StatusName", queryDto.StatusName ?? string.Empty),
                 new OracleParameter(":P_Group", queryDto.Group ?? string.Empty),
                 new OracleParameter(":P_Name", queryDto.Name ?? string.Empty),
                 new OracleParameter(":P_Content", $"%{queryDto.Content}%"));
 
-            var items = connection.ExecuteReader(sqlQuery, reader =>
+            var items = await connection.ExecuteReaderAsync(sqlQuery, reader =>
             {
                 var messages = new List<MessageDto>();
 
@@ -360,11 +359,11 @@ namespace Rennix09.CAP.Oracle
                     });
                 }
 
-                return messages;
+                return Task.FromResult( messages);
             }, sqlParams: sqlParams);
 
-            return Task.FromResult( new PagedQueryResult<MessageDto>
-            { Items = items, PageIndex = queryDto.CurrentPage, PageSize = queryDto.PageSize, Totals = count });
+            return   new PagedQueryResult<MessageDto>
+            { Items = items, PageIndex = queryDto.CurrentPage, PageSize = queryDto.PageSize, Totals = count };
         }
 
     }

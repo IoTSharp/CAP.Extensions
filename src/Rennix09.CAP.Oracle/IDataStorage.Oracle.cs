@@ -17,6 +17,7 @@ using DotNetCore.CAP.Serialization;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using Oracle.ManagedDataAccess.Client;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace Rennix09.CAP.Oracle
 {
@@ -27,13 +28,16 @@ namespace Rennix09.CAP.Oracle
         private readonly IStorageInitializer _initializer;
         private readonly string _pubName;
         private readonly string _recName;
+        private readonly string _lockName;
         private readonly ISerializer _serializer;
+        private readonly ISnowflakeId _snowflakeId;
 
         public OracleDataStorage(
             IOptions<OracleOptions> options,
             IOptions<CapOptions> capOptions,
             IStorageInitializer initializer,
-             ISerializer serializer)
+             ISerializer serializer, 
+        ISnowflakeId snowflakeId)
         {
             _options = options;
             _capOptions = capOptions;
@@ -41,12 +45,13 @@ namespace Rennix09.CAP.Oracle
             _pubName = initializer.GetPublishedTableName();
             _recName = initializer.GetReceivedTableName();
             _serializer = serializer;
+            _snowflakeId = snowflakeId;
+            _lockName = initializer.GetLockTableName();
         }
 
         public async Task ChangePublishStateToDelayedAsync(string[] ids)
         {
-            var sql =
-          $@"UPDATE ""{_pubName}"" SET ""Retries"" = :P_Retries,""ExpiresAt"" = :P_ExpiresAt,""StatusName"" = :P_StatusName WHERE ""Id"" = :P_Id";
+            var sql =$@"UPDATE ""{_pubName}"" SET ""Retries"" = :P_Retries,""ExpiresAt"" = :P_ExpiresAt,""StatusName"" = :P_StatusName WHERE ""Id"" = :P_Id";
             using var connection = new OracleConnection(_options.Value.ConnectionString);
             using var tran = connection.BeginTransaction();
             try
@@ -54,7 +59,7 @@ namespace Rennix09.CAP.Oracle
                 foreach (var id in ids)
                 {
                     object[] sqlParams = { new OracleParameter(":P_Id", id) };
-                    connection.ExecuteNonQuery(sql, sqlParams: sqlParams);
+                    await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
                 }
                 await tran.CommitAsync();
             }
@@ -71,7 +76,7 @@ namespace Rennix09.CAP.Oracle
         public async Task ChangeReceiveStateAsync(MediumMessage message, StatusName state) =>
             await ChangeMessageStateAsync(_recName, message, state);
 
-        public Task<MediumMessage> StoreMessageAsync(string name, Message content, object dbTransaction = null)
+        public async Task<MediumMessage> StoreMessageAsync(string name, Message content, object dbTransaction = null)
         {
             var message = new MediumMessage
             {
@@ -100,7 +105,7 @@ namespace Rennix09.CAP.Oracle
             if (dbTransaction == null)
             {
                 using var connection = new OracleConnection(_options.Value.ConnectionString);
-                connection.ExecuteNonQuery(sql, sqlParams: sqlParams);
+             await   connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
             }
             else
             {
@@ -110,18 +115,18 @@ namespace Rennix09.CAP.Oracle
                     dbTrans = dbContextTrans.GetDbTransaction();
                 }
 
-                var conn = dbTrans?.Connection;
-                conn.ExecuteNonQuery(sql, dbTrans, sqlParams);
+                var conn = (DbConnection)dbTrans?.Connection;
+                await conn.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
             }
 
-            return Task.FromResult( message);
+            return message;
         }
 
         public Task StoreReceivedExceptionMessageAsync(string name, string group, string content)
         {
             object[] sqlParams =
             {
-                new OracleParameter(":P_Id", SnowflakeId.Default().NextId().ToString()),
+                new OracleParameter(":P_Id", _snowflakeId.NextId().ToString()),
                 new OracleParameter(":P_Name", name),
                 new OracleParameter(":P_Group", group),
                 new OracleParameter(":P_Content", content),
@@ -139,7 +144,7 @@ namespace Rennix09.CAP.Oracle
         {
             var mdMessage = new MediumMessage
             {
-                DbId = SnowflakeId.Default().NextId().ToString(),
+                DbId = _snowflakeId.NextId().ToString(),
                 Origin = message,
                 Added = DateTime.Now,
                 ExpiresAt = null,
@@ -165,10 +170,9 @@ namespace Rennix09.CAP.Oracle
         public async Task<int> DeleteExpiresAsync(string table, DateTime timeout, int batchCount = 1000, CancellationToken token = default)
         {
             using var connection = new OracleConnection(_options.Value.ConnectionString);
-            //var sql = $@"DELETE FROM ""{table}"" WHERE ""ExpiresAt"" < {timeout.ToString().BootstrapDateFunction()} AND ROWNUM <= {batchCount}";
-            //return await Task.FromResult(connection.ExecuteNonQuery(sql));
+   
             var sql = $@"DELETE FROM ""{table}"" WHERE ""ExpiresAt"" < :timeout AND ROWNUM <= :batchCount";
-            return await Task.FromResult(connection.ExecuteNonQuery(sql, null, new OracleParameter(":timeout", timeout), new OracleParameter(":batchCount", batchCount)));
+            return await  connection.ExecuteNonQueryAsync(sql, null, new OracleParameter(":timeout", timeout), new OracleParameter(":batchCount", batchCount)).ConfigureAwait(false);
         }
 
         public async Task<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry() =>
@@ -197,7 +201,7 @@ namespace Rennix09.CAP.Oracle
             if (dbTransaction == null)
             {
                 using var connection = new OracleConnection(_options.Value.ConnectionString);
-                connection.ExecuteNonQuery(sql, sqlParams: sqlParams);
+                await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
             }
             else
             {
@@ -207,10 +211,9 @@ namespace Rennix09.CAP.Oracle
                     dbTrans = dbContextTrans.GetDbTransaction();
                 }
 
-                var conn = dbTrans?.Connection;
-                conn.ExecuteNonQuery(sql, sqlParams: sqlParams);
+                var conn = dbTrans?.Connection as DbConnection;
+                await conn.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
             }
-            await Task.CompletedTask;
         }
 
         private void StoreReceivedMessage(object[] sqlParams, DateTime added, DateTime? expiresAt)
@@ -219,7 +222,7 @@ namespace Rennix09.CAP.Oracle
                       VALUES(:P_Id,'{_options.Value.Version}',:P_Name,:P_Group,:P_Content,:P_Retries,:P_Added,:P_ExpiresAt,:P_StatusName)";
 
             using var connection = new OracleConnection(_options.Value.ConnectionString);
-            connection.ExecuteNonQuery(sql, sqlParams: sqlParams);
+            _ = connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams);
         }
 
         private async Task<IEnumerable<MediumMessage>> GetMessagesOfNeedRetryAsync(string tableName)
@@ -230,7 +233,7 @@ namespace Rennix09.CAP.Oracle
                 $"AND \"Version\"='{_capOptions.Value.Version}' AND \"Added\"<:P_FourMinAgo AND (\"StatusName\" = '{StatusName.Failed}' OR \"StatusName\" = '{StatusName.Scheduled}') AND ROWNUM <= 200";
 
             using var connection = new OracleConnection(_options.Value.ConnectionString);
-            var result = connection.ExecuteReader(sql, reader =>
+            var result = await connection.ExecuteReaderAsync(sql, reader =>
             {
                 var messages = new List<MediumMessage>();
                 while (reader.Read())
@@ -244,8 +247,8 @@ namespace Rennix09.CAP.Oracle
                     });
                 }
 
-                return messages;
-            }, new OracleParameter(":P_FourMinAgo", fourMinAgo));
+                return Task.FromResult(messages);
+            },null, new OracleParameter(":P_FourMinAgo", fourMinAgo)).ConfigureAwait(false);
 
             return await Task.FromResult(result);
         }
@@ -271,7 +274,7 @@ namespace Rennix09.CAP.Oracle
             using var connection = new OracleConnection(_options.Value.ConnectionString);
             await connection.OpenAsync(token);
             using var transaction = connection.BeginTransaction();
-            var messageList = connection.ExecuteReader(sql, reader =>
+            var messageList =await connection.ExecuteReaderAsync(sql, reader =>
             {
                 var messages = new List<MediumMessage>();
                 while (reader.Read())
@@ -285,10 +288,115 @@ namespace Rennix09.CAP.Oracle
                         ExpiresAt = reader.GetDateTime(4)
                     });
                 }
-                return messages;
+                return Task.FromResult(messages);
             }, transaction, sqlParams);
             await scheduleTask(transaction, messageList);
             await transaction.CommitAsync(token);
+        }
+
+        public async Task<bool> AcquireLockAsync(string key, TimeSpan ttl, string instance,
+               CancellationToken token = default)
+        {
+            var sql =
+                $"UPDATE `{_lockName}` SET `Instance`=:Instance,`LastLockTime`=:LastLockTime WHERE `Key`=:Key AND `LastLockTime` < :TTL;";
+            var connection = new OracleConnection(_options.Value.ConnectionString);
+            await using var _ = connection.ConfigureAwait(false);
+            object[] sqlParams =
+            {
+            new OracleParameter(":Instance", instance),
+            new OracleParameter(":LastLockTime", DateTime.Now),
+            new OracleParameter(":Key", key),
+            new OracleParameter(":TTL", DateTime.Now.Subtract(ttl))
+        };
+            var opResult = await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+            return opResult > 0;
+        }
+
+        public async Task ReleaseLockAsync(string key, string instance, CancellationToken token = default)
+        {
+            var sql =
+                $"UPDATE `{_lockName}` SET `Instance`='',`LastLockTime`=:LastLockTime WHERE `Key`=:Key AND `Instance`=:Instance;";
+            var connection = new OracleConnection(_options.Value.ConnectionString);
+            await using var _ = connection.ConfigureAwait(false);
+            object[] sqlParams =
+            {
+            new OracleParameter(":Instance", instance),
+            new OracleParameter(":LastLockTime", DateTime.MinValue),
+            new OracleParameter(":Key", key)
+        };
+            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+        }
+
+        public async Task RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
+        {
+            var sql =
+                $"UPDATE `{_lockName}` SET `LastLockTime`= date_add(`LastLockTime`, interval {ttl.TotalSeconds} second) WHERE `Key`=:Key AND `Instance`=:Instance;";
+            var connection = new OracleConnection(_options.Value.ConnectionString);
+            await using var _ = connection.ConfigureAwait(false);
+            object[] sqlParams =
+            {
+            new OracleParameter(":Instance", instance),
+            new OracleParameter(":Key", key)
+        };
+            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+        }
+ 
+           
+
+        public Task<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+        {
+            return GetMessagesOfNeedRetryAsync(_pubName, lookbackSeconds);
+        }
+
+        public Task<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+        {
+            return GetMessagesOfNeedRetryAsync(_recName, lookbackSeconds);
+        }
+         private async Task StoreReceivedMessage(object[] sqlParams)
+        {
+            var sql =
+                $@"INSERT INTO `{_recName}`(`Id`,`Version`,`Name`,`Group`,`Content`,`Retries`,`Added`,`ExpiresAt`,`StatusName`) " +
+                $"VALUES(:Id,'{_options.Value.Version}',:Name,:Group,:Content,:Retries,:Added,:ExpiresAt,:StatusName);";
+
+            var connection = new OracleConnection(_options.Value.ConnectionString);
+            await using var _ = connection.ConfigureAwait(false);
+            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+        }
+
+        private async Task<IEnumerable<MediumMessage>> GetMessagesOfNeedRetryAsync(string tableName, TimeSpan lookbackSeconds)
+        {
+            var fourMinAgo = DateTime.Now.Subtract(lookbackSeconds);
+            var sql =
+                $"SELECT `Id`,`Content`,`Retries`,`Added` FROM `{tableName}` WHERE `Retries`<:Retries " +
+                $"AND `Version`=:Version AND `Added`<:Added AND `StatusName` IN ('{StatusName.Failed}','{StatusName.Scheduled}') LIMIT 200;";
+
+            object[] sqlParams =
+            {
+            new OracleParameter(":Retries", _capOptions.Value.FailedRetryCount),
+            new OracleParameter(":Version", _capOptions.Value.Version),
+            new OracleParameter(":Added", fourMinAgo)
+        };
+
+            var connection = new OracleConnection(_options.Value.ConnectionString);
+            await using var _ = connection.ConfigureAwait(false);
+            var result = await connection.ExecuteReaderAsync(sql, async reader =>
+            {
+                var messages = new List<MediumMessage>();
+                while (await reader.ReadAsync().ConfigureAwait(false))
+                {
+                    messages.Add(new MediumMessage
+                    {
+                        DbId = reader.GetInt64(0).ToString(),
+                        Origin = _serializer.Deserialize(reader.GetString(1))!,
+                        Retries = reader.GetInt32(2),
+                        Added = reader.GetDateTime(3)
+                    });
+                }
+
+                return messages;
+            }, sqlParams: sqlParams).ConfigureAwait(false);
+
+            return result;
         }
     }
 }

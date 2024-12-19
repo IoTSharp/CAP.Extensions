@@ -45,9 +45,7 @@ namespace Rennix09.CAP.Oracle
 
             var sql = CreateDbTablesScript();
             using (var connection = new OracleConnection(_options.Value.ConnectionString))
-                connection.ExecuteNonQuery(sql);
-
-            await Task.CompletedTask;
+              await  connection.ExecuteNonQueryAsync(sql);
 
             _logger.LogDebug("Ensuring all create database tables script are applied.");
         }
@@ -108,6 +106,11 @@ namespace Rennix09.CAP.Oracle
                 end;
             ";
             return batchSql;
+        }
+
+        public string GetLockTableName()
+        {
+            return $"{_options.Value.TableNamePrefix}.lock";
         }
     }
 }
